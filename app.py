@@ -228,53 +228,40 @@ def gastos_por_familia(df_gastos: pd.DataFrame, familias: dict) -> dict:
 
 def generar_contexto_ia(df_gastos: pd.DataFrame, df_sueldos: pd.DataFrame, familias: dict) -> str:
     """
-    Construye el contexto financiero resumido que se enviará a la IA.
-    Solo se envía información estadística, no datos crudos, para minimizar tokens.
+    Construye el contexto financiero MUY COMPRIMIDO para minimizar tokens enviados a la IA.
+    Solo se incluyen los datos más relevantes para el análisis.
     """
     resumen = calcular_resumen(df_gastos, df_sueldos)
 
-    # Gastos por concepto (top 8)
-    top_conceptos = (
-        df_gastos.groupby("Concepto")["Monto"]
-        .sum()
-        .sort_values(ascending=False)
-        .head(8)
-    )
-
-    # Gastos por mes
-    if "Mes" in df_gastos.columns:
-        por_mes = df_gastos.groupby("Mes")["Monto"].sum().to_dict()
-    else:
-        por_mes = {}
-
-    # Sueldos por mes
-    sueldos_por_mes = {}
-    if "Mes" in df_sueldos.columns:
-        sueldos_por_mes = df_sueldos.set_index("Mes")["Sueldo_Pesos"].to_dict()
-
-    # Familias con montos
+    # Top 5 familias por gasto (no todos los conceptos)
     fam_montos = gastos_por_familia(df_gastos, familias)
+    top_familias = sorted(fam_montos.items(), key=lambda x: x[1], reverse=True)[:5]
 
-    ctx = f"""
-=== RESUMEN FINANCIERO ===
-- Total ingresos (sueldos): ${resumen['total_ingresos']:,.0f} ARS
-- Total gastos: ${resumen['total_gastos']:,.0f} ARS
-- Balance: ${resumen['balance']:,.0f} ARS
-- Tasa de ahorro: {resumen['tasa_ahorro']:.1f}%
+    # Solo último mes disponible
+    mes_actual = ultimo_mes_disponible(df_gastos)
+    gasto_mes_actual = 0
+    if mes_actual and "Mes" in df_gastos.columns:
+        gasto_mes_actual = float(
+            df_gastos[df_gastos["Mes"].str.upper() == mes_actual]["Monto"].sum()
+        )
 
-=== GASTOS POR CATEGORÍA (familias) ===
-{chr(10).join(f"- {k}: ${v:,.0f}" for k, v in fam_montos.items())}
+    # Ingreso del último mes
+    ingreso_mes_actual = 0
+    if mes_actual and "Mes" in df_sueldos.columns:
+        fila = df_sueldos[df_sueldos["Mes"].str.upper() == mes_actual]
+        if not fila.empty:
+            ingreso_mes_actual = float(fila["Sueldo_Pesos"].iloc[0])
 
-=== TOP CONCEPTOS DE GASTO ===
-{top_conceptos.to_string()}
-
-=== GASTOS POR MES ===
-{chr(10).join(f"- {mes}: ${monto:,.0f}" for mes, monto in por_mes.items())}
-
-=== INGRESOS POR MES ===
-{chr(10).join(f"- {mes}: ${sueldo:,.0f}" for mes, sueldo in sueldos_por_mes.items())}
-"""
-    return ctx.strip()
+    ctx = (
+        f"Ingresos totales: ${resumen['total_ingresos']:,.0f} ARS | "
+        f"Gastos totales: ${resumen['total_gastos']:,.0f} ARS | "
+        f"Balance: ${resumen['balance']:,.0f} ARS | "
+        f"Ahorro: {resumen['tasa_ahorro']:.1f}%\n"
+        f"Último mes ({mes_actual}): ingreso ${ingreso_mes_actual:,.0f} / gasto ${gasto_mes_actual:,.0f}\n"
+        f"Top gastos por categoría: "
+        + ", ".join(f"{k} ${v:,.0f}" for k, v in top_familias)
+    )
+    return ctx
 
 
 # ============================================================
@@ -293,7 +280,7 @@ def consultar_ia(api_key: str, contexto: str, pregunta: str = None) -> str:
     # Configurar Gemini con la API key del usuario
     genai.configure(api_key=api_key)
     model = genai.GenerativeModel(
-        model_name="gemini-2.0-flash",
+        model_name="gemini-2.0-flash-lite",
         system_instruction="""Eres FinanzIA, un asesor experto en finanzas personales en Argentina.
 Tu misión es ayudar al usuario a entender su situación financiera y mejorar sus hábitos de gasto.
 
@@ -1222,7 +1209,7 @@ with tab_info:
     with col2:
         st.subheader("🧠 Cómo funciona la IA")
         st.markdown("""
-        La IA usa el modelo **Gemini 2.0 Flash** de Google con
+        La IA usa el modelo **Gemini 2.0 Flash Lite** de Google con
         un *prompt de sistema* que define el rol de asesor
         financiero personal.
 
