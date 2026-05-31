@@ -1,0 +1,20 @@
+# API keys y secretos
+.env
+secrets.toml
+.streamlit/secrets.toml
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Datos personales (no subir al repo)
+*.xlsx
+*.xls
+*.csv
+
+# OS
+.DS_Store
+Thumbs.db
