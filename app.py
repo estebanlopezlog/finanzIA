@@ -288,8 +288,9 @@ REGLAS:
 3. Estructurá tu respuesta con secciones en markdown (## para títulos, - para listas).
 4. Basate ÚNICAMENTE en los datos financieros provistos; no inventes cifras.
 5. Sé concreto: citá números reales del contexto cuando sea relevante.
-6. Limitá tu respuesta a 350 palabras máximo para ser conciso.
-7. Si hay algo preocupante, mencionalo con tacto pero con claridad."""
+6. Limitá tu respuesta a 500 palabras máximo.
+7. Si hay algo preocupante, mencionalo con tacto pero con claridad.
+8. SIEMPRE terminá tu respuesta con una sección "## ✅ Conclusión" de 2 líneas. Nunca dejes la respuesta incompleta."""
 
     if pregunta:
         user_msg = f"Mis datos financieros:\n{contexto}\n\nMi pregunta: {pregunta}"
@@ -302,7 +303,7 @@ REGLAS:
             {"role": "system", "content": system_prompt},
             {"role": "user",   "content": user_msg},
         ],
-        max_tokens=500,
+        max_tokens=900,
         temperature=0.6,
     )
     return response.choices[0].message.content
