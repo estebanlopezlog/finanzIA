@@ -8,7 +8,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-import google.generativeai as genai
+from groq import Groq
 from datetime import datetime
 import io
 
@@ -270,18 +270,16 @@ def generar_contexto_ia(df_gastos: pd.DataFrame, df_sueldos: pd.DataFrame, famil
 
 def consultar_ia(api_key: str, contexto: str, pregunta: str = None) -> str:
     """
-    Llama a Gemini 1.5 Flash con un system prompt de asesor financiero.
+    Llama a Groq (Llama 3) con un system prompt de asesor financiero.
+    Groq es gratuito, sin límite diario real y muy rápido.
     Parámetros:
-        api_key  : Google Gemini API key
-        contexto : resumen financiero del usuario
+        api_key  : Groq API key (console.groq.com)
+        contexto : resumen financiero comprimido del usuario
         pregunta : consulta puntual (None = análisis general)
     """
+    client = Groq(api_key=api_key)
 
-    # Configurar Gemini con la API key del usuario
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel(
-        model_name="gemini-2.0-flash-lite",
-        system_instruction="""Eres FinanzIA, un asesor experto en finanzas personales en Argentina.
+    system_prompt = """Eres FinanzIA, un asesor experto en finanzas personales en Argentina.
 Tu misión es ayudar al usuario a entender su situación financiera y mejorar sus hábitos de gasto.
 
 REGLAS:
@@ -290,18 +288,24 @@ REGLAS:
 3. Estructurá tu respuesta con secciones en markdown (## para títulos, - para listas).
 4. Basate ÚNICAMENTE en los datos financieros provistos; no inventes cifras.
 5. Sé concreto: citá números reales del contexto cuando sea relevante.
-6. Limitá tu respuesta a 400 palabras máximo para ser conciso.
-7. Si hay algo preocupante, mencionalo con tacto pero con claridad.""",
-    )
+6. Limitá tu respuesta a 350 palabras máximo para ser conciso.
+7. Si hay algo preocupante, mencionalo con tacto pero con claridad."""
 
-    # Construir el mensaje
     if pregunta:
         user_msg = f"Mis datos financieros:\n{contexto}\n\nMi pregunta: {pregunta}"
     else:
         user_msg = f"Analizá mi situación financiera y dame recomendaciones accionables:\n{contexto}"
 
-    response = model.generate_content(user_msg)
-    return response.text
+    response = client.chat.completions.create(
+        model="llama-3.1-8b-instant",   # rápido, gratuito, muy capaz
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user",   "content": user_msg},
+        ],
+        max_tokens=500,
+        temperature=0.6,
+    )
+    return response.choices[0].message.content
 
 
 # ============================================================
@@ -459,9 +463,9 @@ with st.sidebar:
 
     # --- API Key ---
     api_key = st.text_input(
-        "🔑 Gemini API Key",
+        "🔑 Groq API Key",
         type="password",
-        help="Tu clave de Google Gemini (aistudio.google.com). No se almacena.",
+        help="Tu clave de Groq (console.groq.com). Gratuita y sin límite diario.",
     )
 
     st.divider()
@@ -1081,7 +1085,7 @@ with tab_ia:
     key_lista    = bool(api_key)
 
     if not key_lista:
-        st.warning("⚠️ Ingresá tu **Gemini API Key** en el panel lateral para usar esta función.")
+        st.warning("⚠️ Ingresá tu **Groq API Key** en el panel lateral para usar esta función.")
     elif not datos_listos:
         st.info("📂 Primero cargá tu archivo **Finanzas.xlsx** desde el panel lateral.")
     else:
@@ -1106,7 +1110,7 @@ with tab_ia:
                         try:
                             st.session_state.analisis_cache = consultar_ia(api_key, contexto)
                         except Exception as e:
-                            st.error(f"Error al conectar con Gemini: {e}")
+                            st.error(f"Error al conectar con Groq: {e}")
         with col_reset:
             if st.session_state.analisis_cache:
                 if st.button("🔄 Regenerar", use_container_width=True):
@@ -1174,7 +1178,7 @@ with tab_info:
     st.markdown("""
     **FinanzIA** es una aplicación web de finanzas personales potenciada por Inteligencia Artificial.
     Cargás tu propio historial de gastos e ingresos en Excel, organizás los conceptos por familias
-    y obtenés análisis y recomendaciones personalizadas gracias a Gemini 1.5 Flash de Google.
+    y obtenés análisis y recomendaciones personalizadas gracias a Llama 3.1 vía Groq.
     """)
 
     st.divider()
@@ -1202,14 +1206,14 @@ with tab_info:
         más preciso.
 
         **Paso 5 — Analizá con IA** 🤖
-        Ingresá tu Gemini API Key y generá un análisis
+        Ingresá tu Groq API Key y generá un análisis
         automático o hacé preguntas en el chat financiero.
         """)
 
     with col2:
         st.subheader("🧠 Cómo funciona la IA")
         st.markdown("""
-        La IA usa el modelo **Gemini 2.0 Flash Lite** de Google con
+        La IA usa el modelo **Llama 3.1** vía Groq con
         un *prompt de sistema* que define el rol de asesor
         financiero personal.
 
@@ -1238,7 +1242,7 @@ with tab_info:
         - Tu **API Key nunca se almacena** en ningún servidor.
         - Los datos del Excel se procesan **localmente** en
           la sesión de Streamlit y no se persisten entre sesiones.
-        - Solo se envían **resúmenes numéricos** a la API de Gemini.
+        - Solo se envían **resúmenes numéricos** a la API de Groq.
         """)
 
     st.divider()
