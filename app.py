@@ -321,20 +321,43 @@ REGLAS:
 # FUNCIONES DE LÍMITES Y ALERTAS
 # ============================================================
 
-def gasto_total_familia(familia: str, df_gastos: pd.DataFrame | None,
-                         gastos_manuales: list, familias: dict) -> float:
+def ultimo_mes_disponible(df_gastos: pd.DataFrame) -> str | None:
     """
-    Suma todos los gastos (Excel + manuales) asociados a una familia.
+    Devuelve el valor del último mes disponible en la columna 'Mes' del Excel.
+    Retorna None si la columna no existe.
+    """
+    if df_gastos is None or "Mes" not in df_gastos.columns:
+        return None
+    meses_orden = ["ENERO","FEBRERO","MARZO","ABRIL","MAYO","JUNIO",
+                   "JULIO","AGOSTO","SEPTIEMBRE","OCTUBRE","NOVIEMBRE","DICIEMBRE"]
+    meses_presentes = df_gastos["Mes"].dropna().str.upper().unique().tolist()
+    # Ordenar y devolver el último
+    meses_presentes.sort(key=lambda m: meses_orden.index(m) if m in meses_orden else 99)
+    return meses_presentes[-1] if meses_presentes else None
+
+
+def gasto_total_familia(familia: str, df_gastos: pd.DataFrame | None,
+                         gastos_manuales: list, familias: dict,
+                         solo_ultimo_mes: bool = True) -> float:
+    """
+    Suma los gastos (Excel + manuales) de una familia.
+    Con solo_ultimo_mes=True filtra únicamente el mes más reciente del Excel,
+    para que la comparación con el límite mensual sea correcta.
     """
     conceptos = familias.get(familia, [])
     total = 0.0
 
     # Gastos del Excel
     if df_gastos is not None and conceptos:
-        mask  = df_gastos["Concepto"].isin(conceptos)
-        total += float(df_gastos.loc[mask, "Monto"].sum())
+        df_filtrado = df_gastos
+        if solo_ultimo_mes and "Mes" in df_gastos.columns:
+            mes = ultimo_mes_disponible(df_gastos)
+            if mes:
+                df_filtrado = df_gastos[df_gastos["Mes"].str.upper() == mes]
+        mask  = df_filtrado["Concepto"].isin(conceptos)
+        total += float(df_filtrado.loc[mask, "Monto"].sum())
 
-    # Gastos registrados manualmente
+    # Gastos manuales del mes actual (siempre se suman todos los registrados)
     for g in gastos_manuales:
         if g["familia"] == familia:
             total += g["monto"]
@@ -605,17 +628,47 @@ with tab_dash:
                 )
                 st.plotly_chart(fig_mes, use_container_width=True)
 
-        # Gráfico 2: Torta por concepto
+        # Gráfico 2: Torta por FAMILIA de gastos
         with col2:
-            conceptos_total = df_g.groupby("Concepto")["Monto"].sum().reset_index()
-            fig_pie = px.pie(
-                conceptos_total,
-                names="Concepto", values="Monto",
-                title="Distribución de Gastos por Concepto",
-                color_discrete_sequence=px.colors.qualitative.Bold,
-            )
-            fig_pie.update_layout(height=370)
-            st.plotly_chart(fig_pie, use_container_width=True)
+            # Calcular montos por familia (todos los meses, para el gráfico histórico)
+            conceptos_asignados = set()
+            datos_familia = {}
+            for fam, conceptos in st.session_state.familias.items():
+                if conceptos:
+                    mask  = df_g["Concepto"].isin(conceptos)
+                    total = float(df_g.loc[mask, "Monto"].sum())
+                    if total > 0:
+                        datos_familia[fam] = total
+                    conceptos_asignados.update(conceptos)
+
+            # Conceptos sin clasificar
+            sin_clasificar_df = df_g[~df_g["Concepto"].isin(conceptos_asignados)]
+            n_sin_clasificar  = sin_clasificar_df["Concepto"].nunique()
+            monto_sin_clas    = float(sin_clasificar_df["Monto"].sum())
+            if monto_sin_clas > 0:
+                datos_familia["Sin clasificar"] = monto_sin_clas
+
+            if datos_familia:
+                fig_pie = px.pie(
+                    values=list(datos_familia.values()),
+                    names=list(datos_familia.keys()),
+                    title="Distribución de Gastos por Familia",
+                    color_discrete_sequence=px.colors.qualitative.Bold,
+                )
+                fig_pie.update_layout(height=370)
+                st.plotly_chart(fig_pie, use_container_width=True)
+
+                # Alerta de conceptos sin clasificar
+                if n_sin_clasificar > 0:
+                    conceptos_lista = sorted(sin_clasificar_df["Concepto"].unique().tolist())
+                    st.warning(
+                        f"⚠️ Tenés **{n_sin_clasificar} concepto(s)** sin asignar a ninguna familia "
+                        f"(${monto_sin_clas:,.0f} en total). "
+                        f"Asignálos en **Maestro de Gastos** para ver el gráfico completo.\n\n"
+                        f"Sin clasificar: {', '.join(conceptos_lista)}"
+                    )
+            else:
+                st.info("Asigná conceptos a familias en el Maestro de Gastos para ver este gráfico.")
 
         st.divider()
 
