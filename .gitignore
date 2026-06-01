@@ -15,6 +15,9 @@ venv/
 *.xls
 *.csv
 
+# Excepcion: archivo de ejemplo para demo (si se sube intencionalmente)
+!Ejemplo_Finanzas.xlsx
+
 # OS
 .DS_Store
 Thumbs.db
