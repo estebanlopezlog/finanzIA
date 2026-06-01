@@ -100,16 +100,35 @@ st.markdown("""
 # FUNCIONES DE CARGA Y PROCESAMIENTO DE DATOS
 # ============================================================
 
+def _palabras_clave_columna(valor: str) -> bool:
+    """Devuelve True si el valor parece un nombre de columna conocido."""
+    palabras = ["fecha","concepto","monto","importe","mes","medio","pago",
+                "amount","sueldo","ingreso","gasto","año","anio","moneda"]
+    v = str(valor).lower().strip()
+    return any(p in v for p in palabras)
+
+
 def cargar_gastos(xl: pd.ExcelFile) -> pd.DataFrame:
     """
     Carga la hoja 'Gastos' del Excel y normaliza su estructura.
-    El archivo tiene un título en la fila 0 ('Registro de compras')
-    y los nombres de columna reales en la fila 1.
+    Detecta automáticamente si la primera fila es un título (y los headers
+    están en la fila 1) o si los headers están directamente en la fila 0.
     """
     raw = xl.parse("Gastos", header=None)
-    # La fila 1 contiene los nombres de columnas reales (fila 0 es el título)
-    raw.columns = raw.iloc[1].tolist()
-    raw = raw.iloc[2:].reset_index(drop=True)
+
+    # Detectar formato: si la fila 0 contiene palabras clave de columnas → header=0
+    # Si no (ej: "Registro de compras"), los headers reales están en la fila 1
+    primera_fila = raw.iloc[0].tolist()
+    es_header_directo = sum(_palabras_clave_columna(v) for v in primera_fila) >= 2
+
+    if es_header_directo:
+        # Formato estándar: fila 0 = encabezados, fila 1+ = datos
+        raw.columns = primera_fila
+        raw = raw.iloc[1:].reset_index(drop=True)
+    else:
+        # Formato con título: fila 0 = título, fila 1 = encabezados, fila 2+ = datos
+        raw.columns = raw.iloc[1].tolist()
+        raw = raw.iloc[2:].reset_index(drop=True)
 
     # Renombrar columnas clave al formato estándar interno
     rename_map = {}
